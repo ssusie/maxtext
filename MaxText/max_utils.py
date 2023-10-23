@@ -53,13 +53,22 @@ def deactivate_profiler(config):
     jax.profiler.stop_trace()
 
 def _prepare_metrics_for_json(metrics, step, run_name):
-  """Converts metric dictionary into json supported types (e.g. float)""" 
+  """Converts metric dictionary into json supported types (e.g. float)"""
   metrics_dict = {}
   for val in metrics['scalar']:
     metrics_dict[val] = float(metrics['scalar'][val])
   metrics_dict['step'] = float(step)
   metrics_dict['run_name'] = run_name
   return metrics_dict
+
+
+def upload_hlo_to_gcs(dump_dir, bucket, folder):
+  """Moves hlo dump from local dir to gcs bucket."""
+  gcs_path = os.path.join(bucket, folder)
+  command = ['gsutil', 'mv', dump_dir, gcs_path]
+  print(f'Uploading hlo dump from {dump_dir} to {gcs_path}')
+  subprocess.run(command, check=True, capture_output=True)
+
 
 def write_metrics_locally(metrics, step, config, file):
   """Writes metrics locally for testing"""
@@ -78,37 +87,37 @@ def write_metrics_for_gcs(metrics, step, config, running_metrics):
   running_metrics.append(metrics_dict_step)
   if (step + 1) % config.log_period == 0 or step == config.steps - 1:
     start_step = (step // config.log_period) * config.log_period
-    metrics_filename = f"metrics_step_{start_step:06}_to_step_{step:06}.txt"
-    with open(metrics_filename, 'w', encoding="utf8") as metrics_for_gcs:
+    metrics_filename = f'metrics_step_{start_step:06}_to_step_{step:06}.txt'
+    with open(metrics_filename, 'w', encoding='utf8') as metrics_for_gcs:
       for metrics_step in running_metrics:
         metrics_for_gcs.write(str(json.dumps(metrics_step))+'\n')
 
     metrics_for_gcs.close()
     gcs_filename=os.path.join(config.metrics_dir, metrics_filename)
-    command = ["gsutil", "mv", metrics_filename, gcs_filename]
-    max_logging.log(f"Moving file {metrics_filename} to GCS...")
+    command = ['gsutil', 'mv', metrics_filename, gcs_filename]
+    max_logging.log(f'Moving file {metrics_filename} to GCS...')
     subprocess.run(command, check=True, capture_output=True)
-    max_logging.log(f"File {metrics_filename} moved successfully!")
+    max_logging.log(f'File {metrics_filename} moved successfully!')
     running_metrics = [] # reset running_metrics to empty list
   return running_metrics
 
 def fill_unspecified_mesh_axes(parallelism_vals, target_product, parallelism_type):
   """Evaluates unspecified DCN/ICI parallelism values"""
   if -1 in parallelism_vals:
-    assert parallelism_vals.count(-1) == 1, f"Found unspecified values (-1) for more than one {parallelism_type}\
-      parallelism axis. At most one axis can be unspecified."
+    assert parallelism_vals.count(-1) == 1, f'Found unspecified values (-1) for more than one {parallelism_type}\
+      parallelism axis. At most one axis can be unspecified.'
 
     determined_val = target_product/np.product(parallelism_vals)*-1
 
-    assert determined_val >= 1 and determined_val.is_integer, f"Unspecified value unable to be determined with the given\
-      {parallelism_type} parallelism values"
+    assert determined_val >= 1 and determined_val.is_integer, f'Unspecified value unable to be determined with the given\
+      {parallelism_type} parallelism values'
 
     parallelism_vals[parallelism_vals.index(-1)] = int(determined_val)
 
-  target_type = "slices" if parallelism_type == 'DCN' else "devices per slice"
+  target_type = 'slices' if parallelism_type == 'DCN' else 'devices per slice'
 
-  assert np.product(parallelism_vals) == target_product, f"Number of {target_type} {target_product} does not match\
-    the product of the {parallelism_type} parallelism {np.product(parallelism_vals)}"
+  assert np.product(parallelism_vals) == target_product, f'Number of {target_type} {target_product} does not match\
+    the product of the {parallelism_type} parallelism {np.product(parallelism_vals)}'
 
   return parallelism_vals
 
@@ -121,8 +130,8 @@ def create_device_mesh(config, logging=True):
   except:
     num_slices = 1
   num_devices_per_slice = num_devices//num_slices
-  max_logging.log(f"Devices: {devices} (num_devices: {num_devices})")
-  assert len(devices) > 1, "You must have at least two devices"
+  max_logging.log(f'Devices: {devices} (num_devices: {num_devices})')
+  assert len(devices) > 1, 'You must have at least two devices'
 
   multi_slice_env = hasattr(jax.devices()[0], 'slice_index')
 
@@ -139,7 +148,7 @@ def create_device_mesh(config, logging=True):
     mesh = mesh_utils.create_device_mesh(ici_parallelism)
 
   if logging:
-    max_logging.log(f"Decided on mesh: {mesh}")
+    max_logging.log(f'Decided on mesh: {mesh}')
 
   return mesh
 

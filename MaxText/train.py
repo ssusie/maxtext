@@ -19,22 +19,24 @@
 
 # Calling jax.device_count here prevents a "TPU platform already registered" error.
 # See github.com/google/maxtext/issues/20 for more
+import datetime
+from etils import epath
 import jax
 import os
 import sys
-
-jax.config.update('jax_default_prng_impl', 'unsafe_rbg')
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
-os.environ["LIBTPU_INIT_ARGS"] = os.environ.get("LIBTPU_INIT_ARGS","") + " --xla_tpu_spmd_rng_bit_generator_unsafe=true"
-print(f"Found {jax.device_count()} devices.")
-
-from typing import Sequence
-import datetime
-from absl import app
-from flax.linen import partitioning as nn_partitioning
-from flax import linen as nn
 import numpy as np
 import optax
+
+jax.config.update('jax_default_prng_impl', 'unsafe_rbg')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
+os.environ['LIBTPU_INIT_ARGS'] = os.environ.get('LIBTPU_INIT_ARGS','') + ' --xla_tpu_spmd_rng_bit_generator_unsafe=true'
+print(f"Found {jax.device_count()} devices.")
+
+from absl import app
+from typing import Sequence
+from flax.linen import partitioning as nn_partitioning
+from flax import linen as nn
+
 from tensorboardX import SummaryWriter
 
 from layers import Transformer
@@ -56,7 +58,7 @@ from cloud_tpu_diagnostics.configuration import diagnostic_configuration
 from cloud_tpu_diagnostics.configuration import stack_trace_configuration
 
 import max_logging
-cc.initialize_cache(os.path.expanduser("~/jax_cache"))
+cc.initialize_cache(os.path.expanduser('~/jax_cache'))
 
 # https://arxiv.org/pdf/2204.02311.pdf Appendix B
 def calculate_training_tflops(num_model_parameters, config):
@@ -103,20 +105,20 @@ def write_metrics(writer, metrics, step, config):
   """Writes metrics to tensorboard"""
   with jax.spmd_mode('allow_all'):
     if jax.process_index() == 0:
-      for metric_name in metrics.get("scalar",[]):
-        writer.add_scalar(metric_name, metrics["scalar"][metric_name], step)
-      for metric_name in metrics.get("scalars",[]):
-        writer.add_scalars(metric_name, metrics["scalars"][metric_name], step)
+      for metric_name in metrics.get('scalar',[]):
+        writer.add_scalar(metric_name, metrics['scalar'][metric_name], step)
+      for metric_name in metrics.get('scalars',[]):
+        writer.add_scalars(metric_name, metrics['scalars'][metric_name], step)
 
     full_log = step % config.log_period == 0
 
-    max_logging.log(f"completed step: {step}, seconds: {metrics['scalar']['perf/step_time_seconds']:.3f}, "
-          f"TFLOP/s: {metrics['scalar']['perf/per_device_tflops_per_sec']:.3f}, "
-          f"loss: {metrics['scalar']['learning/loss']:.3f}")
+    max_logging.log(f'completed step: {step}, seconds: {metrics["scalar"]["perf/step_time_seconds"]:.3f}, '
+          f'TFLOP/s: {metrics["scalar"]["perf/per_device_tflops_per_sec"]:.3f}, '
+          f'loss: {metrics["scalar"]["learning/loss"]:.3f}')
 
     if full_log and jax.process_index() == 0:
       max_logging.log(
-          f"To see full metrics 'tensorboard --logdir={config.tensorboard_dir}'"
+        f'To see full metrics "tensorboard --logdir={config.tensorboard_dir}"'
       )
       writer.flush()
 
@@ -137,15 +139,15 @@ def record_activation_metrics(output_metrics, intermediate_outputs, config):
 
     for layer_num in range(config.num_decoder_layers):
       output_metrics['scalar'][f'activ_fraction_zero/layer_{layer_num:03d}'] = \
-        metrics_dict["activation_fraction_zero"][0][layer_num]
-      output_metrics['scalar'][f'activ_mean/layer_{layer_num:03d}'] = metrics_dict["activation_mean"][0][layer_num]
-      output_metrics['scalar'][f'activ_stdev/layer_{layer_num:03d}'] = metrics_dict["activation_stdev"][0][layer_num]
+        metrics_dict['activation_fraction_zero'][0][layer_num]
+      output_metrics['scalar'][f'activ_mean/layer_{layer_num:03d}'] = metrics_dict['activation_mean'][0][layer_num]
+      output_metrics['scalar'][f'activ_stdev/layer_{layer_num:03d}'] = metrics_dict['activation_stdev'][0][layer_num]
   else:
     for layer_num in range(config.num_decoder_layers):
       layer = intermediate_outputs['intermediates']['decoder'][f'layers_{layer_num}']
-      output_metrics['scalar'][f'activ_fraction_zero/layer_{layer_num:03d}'] = layer["activation_fraction_zero"][0]
-      output_metrics['scalar'][f'activ_mean/layer_{layer_num:03d}'] = layer["activation_mean"][0]
-      output_metrics['scalar'][f'activ_stdev/layer_{layer_num:03d}'] = layer["activation_stdev"][0]
+      output_metrics['scalar'][f'activ_fraction_zero/layer_{layer_num:03d}'] = layer['activation_fraction_zero'][0]
+      output_metrics['scalar'][f'activ_mean/layer_{layer_num:03d}'] = layer['activation_mean'][0]
+      output_metrics['scalar'][f'activ_stdev/layer_{layer_num:03d}'] = layer['activation_stdev'][0]
 
 def train_step(model, config, state, data, dropout_rng):
   """
@@ -193,7 +195,7 @@ def train_step(model, config, state, data, dropout_rng):
     grads = raw_grads
   new_state = state.apply_gradients(grads=grads)
   metrics = {'scalar': {'learning/loss': loss, 'learning/grad_norm' : max_utils.l2norm_pytree(grads),
-             'learning/raw_grad_norm' : max_utils.l2norm_pytree(raw_grads), 
+             'learning/raw_grad_norm' : max_utils.l2norm_pytree(raw_grads),
              'learning/param_norm' : max_utils.l2norm_pytree(new_state.params)}, 'scalars': {}}
   if config.record_internal_nn_metrics:
     record_activation_metrics(metrics, intermediate_outputs, config)
@@ -246,7 +248,7 @@ def train_loop(config, state=None):
   data_pspec = P(*config.data_sharding)
 
   num_model_parameters = calculate_num_params_from_pytree(state.params)
-  max_logging.log(f"number parameters: {num_model_parameters/10**9:.3f} billion")
+  max_logging.log(f'number parameters: {num_model_parameters/10**9:.3f} billion')
   per_device_tflops = calculate_training_tflops(num_model_parameters, config)
 
   # Define compiled top-level functions.
@@ -264,7 +266,7 @@ def train_loop(config, state=None):
   example_batch = None
   last_step_completion = datetime.datetime.now()
 
-  local_metrics_file = open(config.metrics_file, 'a', encoding="utf8") if config.metrics_file else None
+  local_metrics_file = open(config.metrics_file, 'a', encoding='utf8') if config.metrics_file else None
   running_gcs_metrics = [] if config.gcs_metrics else None
 
   for step in np.arange(get_first_step(state), config.steps):
@@ -281,7 +283,7 @@ def train_loop(config, state=None):
 
     if checkpoint_manager is not None:
       if checkpoint_manager.save(step, state):
-        max_logging.log(f"saved a checkpoint at step {step}")
+        max_logging.log(f'saved a checkpoint at step {step}')
       # Upon preemption, exit when and only when all ongoing saves are complete.
       if checkpoint_manager.reached_preemption(step):
         checkpoint_manager.wait_until_finished()
@@ -304,16 +306,26 @@ def train_loop(config, state=None):
 
 def main(argv: Sequence[str]) -> None:
   pyconfig.initialize(argv)
-  os.environ["TFDS_DATA_DIR"] = pyconfig.config.dataset_path
+  os.environ['TFDS_DATA_DIR'] = pyconfig.config.dataset_path
   debug_config = debug_configuration.DebugConfig(
     stack_trace_config = stack_trace_configuration.StackTraceConfig(
       collect_stack_trace = pyconfig.config.collect_stack_trace,
       stack_trace_to_cloud = pyconfig.config.stack_trace_to_cloud,
       stack_trace_interval_seconds = pyconfig.config.stack_trace_interval_seconds))
   diagnostic_config = diagnostic_configuration.DiagnosticConfig(debug_config)
+
   with diagnostic.diagnose(diagnostic_config):
     train_loop(pyconfig.config)
 
+  xla_flags = os.environ['XLA_FLAGS']
+  if '--xla_dump_to' in xla_flags:
+    xla_dump_flag =[flag for flag in xla_flags.split()
+                    if flag.startswith('--xla_dump_to')][0]
+    dump_dir = xla_dump_flag.split('=')[-1]
+    max_utils.upload_hlo_to_gcs(dump_dir,
+                    pyconfig.config.base_output_directory,
+                    pyconfig.config.run_name)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
   app.run(main)
